@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 const todo = require("yargs");
 const fs = require("fs");
-const path = require("path");
 
 todo.command("Add", "makes an action with a file", function (yargs) {
 	return yargs.options({
@@ -23,8 +22,18 @@ todo.command("Add", "makes an action with a file", function (yargs) {
 	});
 },
 function (argv) {
-	checkForFileContents(argv);
-	writeNote(argv);
+	const jsonObject = require("./" + argv.path + ".json");
+	try {
+		const validFile = checkForFileContents(argv, jsonObject);
+		if (checkForDuplicates(argv, validFile) === 0) {
+			writeNote(argv, validFile);
+		}
+		else {
+			throw new Error("Duplicates found! Please change the file");
+		}
+	} catch (err) {
+		console.log(err.message);
+	}
 
 })
 	.command("List", "makes an action with a file", function (yargs) {
@@ -37,8 +46,8 @@ function (argv) {
 		});
 	},
 	function (argv) {
-		checkForFileContents(argv);
-		ListNotes(argv);
+		const jsonObject = require("./" + argv.path + ".json");
+		ListNotes(argv,checkForFileContents(argv, jsonObject));
 	}
 	)
 	.command("Read", "makes an action with a file", function (yargs) {
@@ -56,8 +65,8 @@ function (argv) {
 		});
 	},
 	function (argv) {
-		checkForFileContents(argv);
-		readNote(argv);
+		const jsonObject = require("./" + argv.path + ".json");
+		readNote(argv,checkForFileContents(argv, jsonObject));
 	}
 	)
 	.command("Remove", "makes an action with a file", function (yargs) {
@@ -75,59 +84,77 @@ function (argv) {
 		});
 	},
 	function (argv) {
-		checkForFileContents(argv);
-		removeNote(argv);
+		const jsonObject = require("./" + argv.path + ".json");
+		removeNote(argv,checkForFileContents(argv, jsonObject));
 	}
 	)
 	.help()
 	.argv;
 
-function checkForFileContents(args) {
-	let jsonObject = fs.readFileSync(args.path + ".json", "utf8");
-	const fileStrings = jsonObject.split("\r\n");
-	//проверка на правильно записанный файл с notes
-	if (jsonObject.match(/(\[(\n)?((\t)|( ))*(((\t)|( ))*{\n((\t)|( ))*"[a-z]*": "[a-z]*",\n((\t)|( ))*"[a-z]*": "[a-z]*"\n((\t)|( ))*},*\n*)*(\n)*\]?)/g)) {
-		return true;
+function checkForFileContents(args, requiredFile) {
+	const jsonFile = JSON.stringify(requiredFile);
+	console.log(requiredFile);
+	if (jsonFile.match(/(\[(\n)*((\t)|( ))*(((\t)|( ))*{\n((\t)|( ))*"[a-z]*": "[a-z]*",\n((\t)|( ))*"[a-z]*": "[a-z]*"\n((\t)|( ))*},*\n*)*(\n)*\]?)/g)) {
+
+		return requiredFile;
+	}
+	else if (jsonFile.match(/((\t)|( )|(\n))*(((\t)|( )|(\n))*{((\t)|( )|(\n))*"[a-z]*": "[a-z]*",((\t)|( )|(\n))*"[a-z]*": "[a-z]*"((\t)|( )|(\n))*},*((\t)|( )|(\n))*)*/g)){
+		let arrayForNotes= [];
+		arrayForNotes.push(requiredFile);
+		return arrayForNotes;
 	}
 	// проверка на пустой файл
-	else if (fileStrings.length <= 1 && fileStrings[0].match(/.+/g) === null) {
-		fs.writeFileSync(args.path + ".json", JSON.stringify([], null, "\t"), "utf8", () => {
-		});
-		return true;
-	}
+	// else if (fileStrings.length <= 1 && fileStrings[0].match(/.+/g) === null) {
+	// 	requiredFile.push([]);
+	// 	fs.writeFileSync(args.path + ".json", JSON.stringify([], null, "\t"), "utf8", () => {
+	// 	});
+	// 	return requiredFile;
+	// }
+
 	else {
 		throw new Error("Invalid File contents");
 	}
 }
 
-function writeNote(args) {
-	const jsonObject = require("./" + args.path + ".json");
-	jsonObject.push({ title: args.title, body: args.body });
-	fs.writeFileSync(args.path + ".json", JSON.stringify(jsonObject, null, "\t"), "utf8", () => {
+function writeNote(args, requiredFile) {
+	requiredFile.push({ title: args.title, body: args.body });
+	fs.writeFileSync(args.path + ".json", JSON.stringify(requiredFile, null, "\t"), "utf8", () => {
 	});
 }
 
-function ListNotes(args) {
-	const jsonObject = require("./" + args.path + ".json");
-	jsonObject.forEach(function (node) {
+function ListNotes(args, requiredFile) {
+	requiredFile.forEach(function (node) {
 		console.log(node);
 	});
 }
 
-function readNote(args) {
-	const jsonObject = require("./" + args.path + ".json");
-	const result = jsonObject.filter(function (node) {
+function readNote(args, requiredFile) {
+	const result = requiredFile.filter(function (node) {
 		return node.title === args.title;
 	});
-	(result.length===0)?console.log("Nothing"):(console.log(result));
+	(result.length === 0) ? console.log("Nothing") : (console.log(result));
 }
 
-function removeNote(args) {
-	const jsonObject = fs.require(args.path + ".json", "utf8");
-	const result = jsonObject.filter((node) => node.title !== args.title);
+function removeNote(args, requiredFile) {
+	const result = requiredFile.filter((node) => node.title !== args.title);
 	fs.writeFile(args.path + ".json", JSON.stringify(result, null, "\t"), "utf8", () => {
 		// eslint-disable-next-line no-console
 		console.log(args.title + "successfully Removed");
 	});
 }
-//@TODO Проверить на дубликаты
+
+function checkForDuplicates(args, file) {
+	const result = file.filter(function (note) {
+		return note.title === args.title;
+	});
+	console.log(result.length + ` notes with title "${args.title}" in file`);
+	return result.length;
+}
+
+function checkforNotesWithMissingBody(args,file){
+	const result = file.filter((note) => !("body" in note));
+	result.forEach(note =>
+	{
+		console.log(`note with ${note.title} + " is missing a body`);
+	});
+}
